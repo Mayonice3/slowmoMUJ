@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+data/extracted_frames/
+data/upsampled_frames/
+data/*.mp4
+.DS_Store

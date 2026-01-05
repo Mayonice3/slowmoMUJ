@@ -1,0 +1,93 @@
+# Ignore the environment
+venv/
+
+# Ignore ALL contents of the data folders (but keep the folders themselves if you want)
+data/extracted_frames/*
+data/upsampled_frames/*
+
+# Ignore the final video files
+data/*.mp4
+
+# Ignore OS-specific hidden files
+.DS_Store
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                               [ Read 7 lines ]
+^G Get Help            ^O WriteOut            ^R Read File           ^Y Prev Pg             ^K Cut Text            ^C Cur Pos
+^X Exit                ^J Justify             ^W Where is            ^V Next Pg             ^U UnCut Text          ^T To Spell
+  UW PICO 5.09                                                       File: .gitignore
+
+venv/
+__pycache__/
+data/extracted_frames/
+data/upsampled_frames/
+*.mp4
+.DS_Store
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+^G Get Help            ^O WriteOut            ^R Read File           ^Y Prev Pg             ^K Cut Text            ^C Cur Pos
+^X Exit                ^J Justify             ^W Where is            ^V Next Pg             ^U UnCut Text          ^T To
