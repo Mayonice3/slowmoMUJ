@@ -1,6 +1,21 @@
+# Virtual Environment
 venv/
+.env
+
+# Python Cache
 __pycache__/
+*.pyc
+
+# Data & Output (Ignore heavy files)
 data/extracted_frames/
 data/upsampled_frames/
+data/report_frames/*
+!data/report_frames/.gitkeep
 data/*.mp4
+
+# OS Files
 .DS_Store
+
+# IDE Files
+.vscode/
+.idea/
