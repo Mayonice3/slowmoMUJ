@@ -146,15 +146,28 @@ class SlowmoApp(ctk.CTk):
             output_path = os.path.join(data_dir, "gui_output_slowmo.mp4")
             report_frames_dir = os.path.join(data_dir, "report_frames")
             
+            # WIPE old report frames so they don't mix with new ones
+            if os.path.exists(report_frames_dir):
+                import shutil
+                shutil.rmtree(report_frames_dir)
+            os.makedirs(report_frames_dir)
+            print(f"--- [UI] PREPARED CLEAN REPORT DIRECTORY ---")
+            
+            # Get values from UI
+            multiplier = int(self.multiplier_var.get())
+            playback_fps = float(self.fps_slider.get())
+            
             if not os.path.exists(data_dir): os.makedirs(data_dir)
 
             process_video_streaming(
                 input_path=input_path,
                 output_path=output_path,
                 processor=self.processor,
-                target_fps_multiplier=int(self.multiplier_var.get()),
+                target_fps_multiplier=multiplier,
+                output_fps=playback_fps,
                 progress_callback=self.update_progress,
                 save_png_count=20,
+                png_output_dir=report_frames_dir
             )
             
             # Force 100% at the end

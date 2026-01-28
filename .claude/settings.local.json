@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/mayur/repos/slowmoMUJ log --oneline -5)",
+      "Bash(git -C /Users/mayur/repos/slowmoMUJ add .gitignore CLAUDE.md)",
+      "Bash(git -C /Users/mayur/repos/slowmoMUJ commit -m \"$\\(cat <<''EOF''\nAdd CLAUDE.md and exclude .pkl files from git tracking\n\nAdded project documentation for Claude Code with architecture overview,\ncommands, and key design decisions. Updated .gitignore to exclude model\nweight files \\(*.pkl\\) to prevent large binaries from being tracked.\n\nCo-Authored-By: Claude \\(claude-opus-4-5-thinking\\) <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}

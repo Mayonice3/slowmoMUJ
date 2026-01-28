@@ -111,15 +111,17 @@ class RIFEProcessor:
             with torch.no_grad():
                 middle = self.model.inference(I0_padded, I1_padded, scale=scale)
             
+            # Sync for MPS to prevent "dragging" artifacts on Mac
+            if self.device.type == 'mps':
+                torch.mps.synchronize()
+            
             # Unpad to original size
             middle = middle[:, :, :h, :w]
             
-            # Ensure back to float for post-processing if it was half
-            if self.fp16:
-                middle = middle.float()
-            
-            # Convert back to numpy BGR
-            middle_np = (middle[0] * 255.0).byte().cpu().numpy().transpose(1, 2, 0)
+            # Convert back to numpy BGR using high-quality rounding
+            # .round().clamp(0, 255) is much better than .byte() which truncates
+            middle_np = (middle[0].permute(1, 2, 0) * 255.0).cpu().numpy()
+            middle_np = np.round(np.clip(middle_np, 0, 255)).astype(np.uint8)
             middle_bgr = cv2.cvtColor(middle_np, cv2.COLOR_RGB2BGR)
             
             return middle_bgr

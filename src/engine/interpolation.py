@@ -15,25 +15,31 @@ def process_video_streaming(
     output_path,
     processor,
     target_fps_multiplier=2,
+    output_fps=30.0,  # Now a parameter
     save_png_count=20,
     png_output_dir=None,
-    progress_callback=None  # New parameter for UI integration
+    progress_callback=None
 ):
     """
     Process video with RIFE interpolation using streaming assembly
-    
-    Args:
-        input_path: Path to input video file
-        output_path: Path to output video file
-        processor: RIFEProcessor instance
-        target_fps_multiplier: Multiplier for output FPS (2 = double framerate)
-        save_png_count: Number of interpolated frames to save as PNG (0 to disable)
-        png_output_dir: Directory to save PNG frames (required if save_png_count > 0)
-        
-    Returns:
-        dict: Statistics about the processing (frame_count, fps, etc.)
+    Supports 2x, 4x, 8x, etc. (powers of 2)
     """
     
+    def get_interpolated_frames(img0, img1, multiplier):
+        """Recursive helper to generate power-of-2 intermediate frames"""
+        if multiplier <= 1:
+            return []
+        
+        try:
+            mid = processor.process_pair(img0, img1)
+        except Exception as e:
+            print(f"\n[WARNING] Interpolation level failed, using blend fallback: {e}")
+            mid = cv2.addWeighted(img0, 0.5, img1, 0.5, 0)
+            
+        # Recursive calls for 4x, 8x, etc.
+        # multiplier // 2 frames from left side, then mid, then multiplier // 2 frames from right side
+        return get_interpolated_frames(img0, mid, multiplier // 2) + [mid] + get_interpolated_frames(mid, img1, multiplier // 2)
+
     try:
         # Open input video
         cap = cv2.VideoCapture(input_path)
@@ -49,13 +55,13 @@ def process_video_streaming(
         print(f"\n[VIDEO INFO]")
         print(f"  Input: {input_path}")
         print(f"  Resolution: {width}x{height}")
-        print(f"  FPS: {fps:.2f}")
+        print(f"  Input FPS: {fps:.2f}")
         print(f"  Total Frames: {total_frames}")
         
-        # Force output FPS to 30 for super slow-motion playback effect
-        out_fps = 30.0
+        # Use provided output_fps
+        out_fps = output_fps
         
-        # Setup video writer IMMEDIATELY (streaming pattern)
+        # Setup video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         writer = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
         
@@ -64,18 +70,15 @@ def process_video_streaming(
         
         print(f"\n[OUTPUT INFO]")
         print(f"  Output: {output_path}")
-        print(f"  FPS: {out_fps:.2f} ({target_fps_multiplier})")
+        print(f"  Target Playback FPS: {out_fps:.2f}")
+        print(f"  Multiplier: {target_fps_multiplier}x")
         print(f"  Expected frames: ~{total_frames * target_fps_multiplier}")
         
-        # Setup PNG export if requested
+        # Setup PNG export
         png_counter = 0
         if save_png_count > 0:
-            if png_output_dir is None:
-                raise ValueError("png_output_dir must be specified when save_png_count > 0")
-            
             if not os.path.exists(png_output_dir):
                 os.makedirs(png_output_dir)
-            
             print(f"\n[PNG EXPORT]")
             print(f"  Saving first {save_png_count} frames to: {png_output_dir}")
         
@@ -84,20 +87,17 @@ def process_video_streaming(
         if not ret:
             raise RuntimeError("Failed to read first frame from video")
         
-        # Write first frame immediately
+        # Write first frame
         writer.write(last_frame)
-        
-        # Save first frame as PNG if enabled
         if save_png_count > 0 and png_counter < save_png_count:
-            png_path = os.path.join(png_output_dir, f"frame_{png_counter:04d}_original.png")
-            cv2.imwrite(png_path, last_frame)
+            cv2.imwrite(os.path.join(png_output_dir, f"frame_{png_counter:04d}_original.png"), last_frame)
             png_counter += 1
         
         # Statistics
         frames_written = 1
         frames_interpolated = 0
         
-        # Main processing loop with progress bar
+        # Main processing loop
         print(f"\n[INTERPOLATION] Processing...")
         pbar = tqdm(total=total_frames-1, desc="Interpolating", unit="pair")
         
@@ -106,36 +106,35 @@ def process_video_streaming(
             if not ret:
                 break
             
-            # 1. Generate interpolated middle frame
-            try:
-                mid_frame = processor.process_pair(last_frame, current_frame, scale=1.0)
+            # Generate multiple interpolated frames (recursive)
+            intermediate_frames = get_interpolated_frames(last_frame, current_frame, target_fps_multiplier)
+            
+            # Write intermediate frames
+            for i, frame in enumerate(intermediate_frames):
+                writer.write(frame)
+                frames_written += 1
                 frames_interpolated += 1
-            except Exception as e:
-                print(f"\n[WARNING] Interpolation failed, using blend fallback: {e}")
-                # Fallback: simple blend if RIFE fails
-                mid_frame = cv2.addWeighted(last_frame, 0.5, current_frame, 0.5, 0)
-            
-            # 2. WRITE IMMEDIATELY (Streaming Assembly - Critical!)
-            writer.write(mid_frame)
-            writer.write(current_frame)
-            frames_written += 2
-            
-            # 3. Save as PNG if within limit
-            if save_png_count > 0 and png_counter < save_png_count:
-                png_path = os.path.join(png_output_dir, f"frame_{png_counter:04d}_interpolated.png")
-                cv2.imwrite(png_path, mid_frame)
-                png_counter += 1
                 
-                if png_counter < save_png_count:
-                    png_path = os.path.join(png_output_dir, f"frame_{png_counter:04d}_original.png")
-                    cv2.imwrite(png_path, current_frame)
+                # Save PNG if within limit
+                if save_png_count > 0 and png_counter < save_png_count:
+                    # Calculate timestamp for filename (e.g., 0.25, 0.5, 0.75)
+                    ts = (i + 1) / target_fps_multiplier
+                    png_path = os.path.join(png_output_dir, f"idx{png_counter:04d}_time{ts:.3f}_interpolated.png")
+                    cv2.imwrite(png_path, frame)
                     png_counter += 1
             
-            # Update for next iteration
+            # Write the next original frame
+            writer.write(current_frame)
+            frames_written += 1
+            if save_png_count > 0 and png_counter < save_png_count:
+                png_path = os.path.join(png_output_dir, f"idx{png_counter:04d}_time1.000_original.png")
+                cv2.imwrite(png_path, current_frame)
+                png_counter += 1
+            
+            # Update
             last_frame = current_frame
             pbar.update(1)
             
-            # Send progress update to UI based on pbar count
             if progress_callback:
                 percent = pbar.n / pbar.total
                 progress_callback(percent)
