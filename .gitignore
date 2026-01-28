@@ -19,3 +19,6 @@ data/*.mp4
 # IDE Files
 .vscode/
 .idea/
+
+# Model Weights
+*.pkl
