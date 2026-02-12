@@ -15,7 +15,10 @@ def process_video_streaming(
     output_path,
     processor,
     target_fps_multiplier=2,
-    output_fps=30.0,  # Now a parameter
+    output_fps=30.0,
+    scale=1.0,  # 1.0 = normal, 2.0 = high quality (2x slower)
+    ensemble=False,  # True = TTA Ensemble (2x slower, better quality)
+    stop_event=None,
     save_png_count=20,
     png_output_dir=None,
     progress_callback=None
@@ -23,6 +26,11 @@ def process_video_streaming(
     """
     Process video with RIFE interpolation using streaming assembly
     Supports 2x, 4x, 8x, etc. (powers of 2)
+    
+    Args:
+        scale: RIFE scale parameter (1.0=normal, 2.0=high quality for fast motion)
+        ensemble: If True, enable TTA ensemble (flip augmentation)
+        stop_event: threading.Event to signal cancellation
     """
     
     def get_interpolated_frames(img0, img1, multiplier):
@@ -30,10 +38,15 @@ def process_video_streaming(
         if multiplier <= 1:
             return []
         
+        # Check stop signal deep in recursion too?
+        if stop_event and stop_event.is_set():
+            return []
+        
         try:
-            mid = processor.process_pair(img0, img1)
+            # Use standard process_pair with scale parameter
+            mid = processor.process_pair(img0, img1, scale=scale, ensemble=ensemble)
         except Exception as e:
-            print(f"\n[WARNING] Interpolation level failed, using blend fallback: {e}")
+            print(f"\n[FALLBACK] Model Failed! Using Blend. Error: {e}")
             mid = cv2.addWeighted(img0, 0.5, img1, 0.5, 0)
             
         # Recursive calls for 4x, 8x, etc.
@@ -41,6 +54,7 @@ def process_video_streaming(
         return get_interpolated_frames(img0, mid, multiplier // 2) + [mid] + get_interpolated_frames(mid, img1, multiplier // 2)
 
     try:
+        # ... (setup code omitted) ...
         # Open input video
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
@@ -72,6 +86,8 @@ def process_video_streaming(
         print(f"  Output: {output_path}")
         print(f"  Target Playback FPS: {out_fps:.2f}")
         print(f"  Multiplier: {target_fps_multiplier}x")
+        print(f"  RIFE Scale: {scale}x")
+        print(f"  Ensemble: {'ON' if ensemble else 'OFF'}")
         print(f"  Expected frames: ~{total_frames * target_fps_multiplier}")
         
         # Setup PNG export
@@ -102,12 +118,22 @@ def process_video_streaming(
         pbar = tqdm(total=total_frames-1, desc="Interpolating", unit="pair")
         
         while True:
+            # Check for stop signal
+            if stop_event and stop_event.is_set():
+                print("\n[STOP] Processing cancelled by user.")
+                break
+                
             ret, current_frame = cap.read()
             if not ret:
                 break
             
             # Generate multiple interpolated frames (recursive)
             intermediate_frames = get_interpolated_frames(last_frame, current_frame, target_fps_multiplier)
+            
+            # If interrupted during recursion
+            if stop_event and stop_event.is_set():
+                print("\n[STOP] Processing cancelled by user.")
+                break
             
             # Write intermediate frames
             for i, frame in enumerate(intermediate_frames):
@@ -139,14 +165,19 @@ def process_video_streaming(
                 percent = pbar.n / pbar.total
                 progress_callback(percent)
         
-        # Final 100% signal
-        if progress_callback:
+        # Final 100% signal (only if finished naturally)
+        if progress_callback and not (stop_event and stop_event.is_set()):
             progress_callback(1.0)
         
         # Cleanup
         pbar.close()
         cap.release()
         writer.release()
+        
+        if stop_event and stop_event.is_set():
+            print(f"\n[CANCELLED]")
+            print(f"  ✓ Partial file saved")
+            return {'success': False, 'cancelled': True}
         
         print(f"\n[COMPLETE]")
         print(f"  ✓ Frames interpolated: {frames_interpolated}")
@@ -181,17 +212,3 @@ def process_video_streaming(
             writer.release()
         except:
             pass
-
-
-# Keep legacy function for backward compatibility (deprecated)
-def interpolate_frames_rife(t1, t2, timestep=0.5):
-    """
-    DEPRECATED: Legacy tensor-based interpolation
-    This is kept for backward compatibility but should not be used in new code
-    Use RIFEProcessor.process_pair() instead
-    """
-    print("[WARNING] Using deprecated interpolate_frames_rife(). Consider using RIFEProcessor instead.")
-    
-    # Simplified implementation - just return average
-    # Real implementation would need a global processor instance
-    return (t1 + t2) / 2

@@ -49,12 +49,15 @@ class RIFEProcessor:
         try:
             self.model.load_model(model_dir, rank=0)
             print(f"[RIFE] Successfully loaded weights from {model_dir}/flownet.pkl")
+            if hasattr(self.model, 'version'):
+                 print(f"[RIFE] Model version: {self.model.version}")
         except Exception as e:
             print(f"[RIFE] WARNING: Failed to load weights: {e}")
             print(f"[RIFE] Using randomly initialized weights (results will be poor)")
         
-        # Enable FP16 (Half Precision) for massive speedup on Apple Silicon / NVIDIA
-        self.fp16 = self.device.type in ['mps', 'cuda']
+        # Enable FP16 (Half Precision) - DISABLED for stability on Mac/MPS
+        # self.fp16 = self.device.type in ['mps', 'cuda']
+        self.fp16 = False 
         if self.fp16:
             print(f"[RIFE] Enabling FP16 Half-Precision mode for optimization")
             self.model.flownet.half()
@@ -64,15 +67,16 @@ class RIFEProcessor:
         
         print(f"[RIFE] Model ready for inference")
     
-    def process_pair(self, img0_bgr, img1_bgr, scale=1.0, timestep=0.5):
+    def process_pair(self, img0_bgr, img1_bgr, scale=1.0, timestep=0.5, ensemble=False):
         """
         Generate interpolated frame between two input frames
         
         Args:
             img0_bgr: First frame as numpy array (H, W, 3) in BGR format
             img1_bgr: Second frame as numpy array (H, W, 3) in BGR format
-            scale: Scale factor for processing (1.0=full res, 0.5=half res for speed)
+            scale: Scale factor for processing (1.0=normal, 2.0=high-quality/slow)
             timestep: Time position of interpolated frame (0.5 = middle)
+            ensemble: If True, uses Test-Time Augmentation (TTA) by flipping inputs and averaging results (2x slower, better quality)
             
         Returns:
             Interpolated frame as numpy array (H, W, 3) in BGR format
@@ -98,19 +102,36 @@ class RIFEProcessor:
                 I0 = I0.half()
                 I1 = I1.half()
             
-            # Pad to multiples of 32 (required by architecture)
-            tmp = max(32, int(32 / scale))
+            # Pad to multiples of 64 (required by new 5-level architecture)
+            tmp = 64
             ph = ((h - 1) // tmp + 1) * tmp
             pw = ((w - 1) // tmp + 1) * tmp
             padding = (0, pw - w, 0, ph - h)
             
-            I0_padded = F.pad(I0, padding)
-            I1_padded = F.pad(I1, padding)
+            # Use reflection padding to avoid edge artifacts affecting flow
+            I0_padded = F.pad(I0, padding, mode='reflect')
+            I1_padded = F.pad(I1, padding, mode='reflect')
             
             # Run inference
             with torch.no_grad():
-                middle = self.model.inference(I0_padded, I1_padded, scale=scale)
-            
+                # Pass timestep directly to the new model
+                middle = self.model.inference(I0_padded, I1_padded, timestep=timestep, scale=scale)
+                
+                # TTA Ensemble: Flip inputs manually, process, then flip output back
+                if ensemble:
+                    # 1. Flip inputs horizontally
+                    I0_flipped = torch.flip(I0_padded, dims=[3])
+                    I1_flipped = torch.flip(I1_padded, dims=[3])
+                    
+                    # 2. Process flipped
+                    middle_flipped = self.model.inference(I0_flipped, I1_flipped, timestep=timestep, scale=scale)
+                    
+                    # 3. Un-flip output
+                    middle_unflipped = torch.flip(middle_flipped, dims=[3])
+                    
+                    # 4. Average results
+                    middle = (middle + middle_unflipped) / 2.0
+
             # Sync for MPS to prevent "dragging" artifacts on Mac
             if self.device.type == 'mps':
                 torch.mps.synchronize()
@@ -141,7 +162,7 @@ if __name__ == "__main__":
     frame1 = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
     
     # Test interpolation
-    result = processor.process_pair(frame0, frame1)
+    result = processor.process_pair(frame0, frame1, scale=1.0)
     print(f"Input shape: {frame0.shape}")
     print(f"Output shape: {result.shape}")
     print("✅ Test passed!")

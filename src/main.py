@@ -17,13 +17,14 @@ REPORT_FRAMES_DIR = os.path.join(DATA_DIR, "report_frames")  # For first 20 fram
 RIFE_MODEL_DIR = os.path.join(os.path.dirname(__file__), "engine", "rife")
 
 
-def run_pipeline(video_filename, save_report_frames=True):
+def run_pipeline(video_filename, save_report_frames=True, scale=1.0):
     """
     RIFE Interpolation Pipeline with Streaming Assembly
     
     Args:
         video_filename: Name of video file in the project root
         save_report_frames: If True, saves first 20 frames as PNGs for reporting
+        scale: RIFE scale factor (1.0 = normal, 2.0 = high quality for fast motion)
     """
     start_time = time.time()
     
@@ -73,6 +74,7 @@ def run_pipeline(video_filename, save_report_frames=True):
             output_path=output_path,
             processor=processor,
             target_fps_multiplier=2,
+            scale=scale,
             save_png_count=20 if save_report_frames else 0,
             png_output_dir=REPORT_FRAMES_DIR if save_report_frames else None
         )
@@ -117,4 +119,5 @@ def run_pipeline(video_filename, save_report_frames=True):
 
 if __name__ == "__main__":
     # Update this to match your test video filename
-    run_pipeline("video.mp4", save_report_frames=True)
+    # scale: 1.0 (normal) or 2.0 (high quality)
+    run_pipeline("video.mp4", save_report_frames=True, scale=1.0)
